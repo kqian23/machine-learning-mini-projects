@@ -1,5 +1,5 @@
 # machine-learning-mini-projects
-A collection of machine learning projects from the book *The Analytics Edge'
+A collection of machine learning projects from the book *The Analytics Edge*
 
 ## Skills Applied
 ### 1. Climate Change Analysis
