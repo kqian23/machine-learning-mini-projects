@@ -1,0 +1,138 @@
+---
+title: "Hubway Case"
+author: "Kun Qian"
+date: "2/26/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+set.seed(1234)
+# load data
+hubway <- read.csv("HubwayTrips.csv")
+# Take a look at the data
+str(hubway)
+```
+## Variable Normalizastion
+### i. Why normalize?
+Clustering algorithm depends highly on the calculation of euclidean distance. If we don't normalize the data, the algorithm will automatically give variables that have larger scale a greater weight. However, we don't that to happen since we want to treat each variable equally so that we can use the information from all of them to determine clusters. 
+
+### ii. Normalization
+```{r}
+library(caret)
+# Use the preprocess function to normalize the data
+preprocess <- preProcess(hubway)
+hubway.norm <- predict(preprocess, hubway)
+# check if all columns are normalized
+library(psych)
+describe(hubway.norm)[3:4]
+```
+
+## K-Means
+### i. How many trips arer in each of the clusters?
+```{r}
+# run K-means
+hubwayKMC <- kmeans(hubway.norm, 10)
+# Create a vector to store the clusters
+hubwayKMCGroups <- hubwayKMC$cluster
+table(hubwayKMCGroups)
+```
+
+### ii. Compare the clusters
+```{r}
+# Add the cluster columns to the data set
+hubway$cluster <- hubwayKMCGroups
+# get the mean values of the unnormalized cluster centroids
+library(dplyr)
+centroids.unnormalized <- hubway %>% group_by(cluster) %>% summarise(across(everything(), list(mean)))
+centroids.unnormalized
+```
+
+- Cluster1: Weekday morning trips by middle age male, low duration
+
+- Cluster2: Weekend trips, mainly by male
+
+- Cluster3: Long duration weekday trips, mainly by middle age male
+
+- Cluster4: Weekday afternoon trips by female
+
+- Cluster5: Weekday afternoon trips by middle age male
+
+- Cluster6: Weekday evening trips mainly by young male
+
+- Cluster7: Weekday morning trips by young male, low duration
+
+- Cluster8: Night trips, mainly by young male
+
+- Cluster9: Weekday afternoon trips by young male
+
+- Cluster10: Weekday morning trips by female
+
+### iii. Interesting clusters
+Cluster3 stand out as the duration of trips in this cluster almost doubles the duration in other clusters. Hubway might want to take a close look into this cluster and find out why the duration is so different.
+
+### iv.
+I think it would be helpful to have *fewer* clusters than 10. More clusters means more granularity of the customer segments. Since we are interested in insights observed from the overall tendency within distinct user groups, having too many user groups is not helpful in summarizing trends, also they might not be that distinct as well. It's also hard for the business to implement improvement solutions if there're too many segments as it become taxing and costly to do so. 
+
+## c. Try different number of clusters
+```{r}
+# Apply the elbow method
+# function to compute total within-cluster sum of square 
+wss <- function(n) {
+  kmeans(hubway.norm, n, nstart = 10 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 1:10
+
+# extract wss for 2-15 clusters
+library(purrr)
+wss_values <- map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+```
+
+It seems like there's a tiny kink at 5 clusters and 7 clusters. Let's pick 5.
+
+### i. How many trips are in each of the cluster?
+```{r}
+# run K-means
+hubwayKMC5 <- kmeans(hubway.norm, 5)
+# Create a vector to store the clusters
+hubwayKMCGroups5 <- hubwayKMC5$cluster
+table(hubwayKMCGroups5)
+```
+
+
+### ii. Look at the unnormalized centorids
+```{r}
+# Add the cluster columns to the data set
+hubway$cluster5 <- hubwayKMCGroups5
+# get the mean values of the unnormalized cluster centroids
+centroids.unnormalized5 <- hubway[,-10] %>% group_by(cluster5) %>% summarise(across(everything(), list(mean)))
+centroids.unnormalized5
+```
+
+- Cluster1: Weekday morning trips, 76% male, low duration
+
+- Cluster2: Long duration weekday evening trips, 82% male, middle age
+
+- Cluster3: Short duration weekday event trips, 72% male, young
+
+- Cluster4: Weekday afternoon trips, 75% male
+
+- Cluster5: Weekend trips throughout the day, 70% male
+
+
+### iii. Better insights
+- All 5 clusters have more male than female, indicates the majority of current customers are male
+- Except the cluster with abnormal duration, weekend trips tend to have slightly longer duration
+- The youngest segment tend to use the service at weekday evening
+- Old age users are correlated with abnormal high duration
+- Weekday afternoon and evening have the most users

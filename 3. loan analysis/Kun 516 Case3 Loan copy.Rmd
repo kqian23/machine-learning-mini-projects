@@ -1,0 +1,201 @@
+---
+title: "516 Case 3 Loan"
+author: "Kun Qian"
+date: "2/12/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+In this project, we use publicly available data from LendingClub, a website that connects borrowers and investors over the internet. There are 9,578 observations, each representing a 3-year loan that was funded through the LendingClub.com platform between May 2007 and February 2010. There are 14 variables in the dataset. We will be trying to predict **NotFullyPaid**, using all of the other variables as independent variables.
+
+## Setup
+```{r}
+set.seed(1234)
+# load data
+loan <- read.csv("Loans.csv")
+# inspect data
+# head(loan)
+str(loan)
+```
+
+
+## a) Let us start by building a logistic regression model
+
+### i. Split the data, report the accuracy on the test set of a simple baseline model.
+```{r}
+library(caTools)
+# create a vector to split the dataset into train and test
+split <- sample.split(loan$NotFullyPaid, SplitRatio = 0.7)
+table(split)
+train <- loan[split==TRUE,]
+test <- loan[split==FALSE,]
+
+# check the distribution of ture and false in the objective variable
+sum(train$NotFullyPaid)/nrow(train)
+# Since 0 is majority, i.e. loans are fully paid back, we will use predicting all 0 as the baseline model
+accuracy_baseline <- nrow(test[test$NotFullyPaid==0,])/nrow(test)
+accuracy_baseline
+```
+Accuracy of the baseline model is 83.99%
+
+### ii. Build a logistic regression model that predicts NotFullyPaid
+```{r}
+# Build the logistic regression model
+loanLog <- glm(NotFullyPaid~., data=train, family=binomial)
+summary(loanLog)
+```
+Significant variables:
+
+* Credit Policy
+* Purpose is either: credit_card, debt_consolidation, major_purchase, or small_business 
+* installment
+* LogAnnualInc 
+* Fico
+* InqLast6mths
+
+### iii. Application A has a FICO credit socre of 700 while Application B has a FICO score of 710. What's Logit(A)-Logit(B)?
+$$ 
+\begin{aligned}
+Logit(A)-Logit(B)&=\beta_{FICO}*X_{FICO}^A-\beta_{FICO}*X_{FICO}^B \\
+&=-0.00736*(700-710) \\
+&=0.0736
+\end{aligned}
+$$
+
+
+### iv. Predict the probability of the test set loans not being paid back in full. 
+```{r}
+# predict the risk probability
+PredictedRisk <- predict(loanLog, newdata = test, type="response")
+# add the predicted probability as a column to the test data
+test$PredictedRisk <- PredictedRisk
+# report accuracy
+sum(round(test$PredictedRisk) == test$NotFullyPaid)/nrow(test)
+```
+The logistic regression model has an accuracy rate of 84%, which is almost identical as the accuracy of the baseline model. 
+
+### v. What's the AUC? 
+```{r}
+library(ROCR)
+ROCRPred <- prediction(test$PredictedRisk, test$NotFullyPaid)
+ROCRperf <- performance(ROCRPred,"tpr","fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0.1,1,by=0.1), text.adj=c(-0.2,1.7))
+
+# report AUC
+ROCRAUC <- performance(ROCRPred, "auc")
+AUC <- ROCRAUC@y.values[[1]]
+AUC
+
+# get accuracy at a better cut-off of 0.2
+# sum((test$PredictedRisk>0.2) == test$NotFullyPaid)/nrow(test)
+
+```
+
+## b. Interest Rate and Loan
+### i. Use a logistic regression model to predict NotFullyPaid using only IntRate
+```{r}
+intLog <- glm(NotFullyPaid~IntRate, data=train, family = binomial)
+summary(intLog)
+```
+Interest rate is significant in the simple model, but insignificant in the previous full model. The difference might be caused by multicollinearity. 
+
+```{r}
+library(corrplot)
+corrplot(cor(train[,-2]))
+```
+
+Interest rate is strongly (negatively) correlated with FICO score.
+
+### ii. use the interest rate model to predict probability of NotFullyPaid on the test set
+```{r}
+PredictedRiskInt <- predict(intLog, test, type="response")
+summary(PredictedRiskInt)
+```
+The highest probability of a loan not being paid back in full on the test set is 45.2%. No loan would we predict would not be paid back in full if we used a threshold of 0.5 to make prediction.
+
+```{r}
+ROCRPred2 <- prediction(PredictedRiskInt, test$NotFullyPaid)
+ROCRperf2 <- performance(ROCRPred,"tpr","fpr")
+plot(ROCRperf2, colorize=TRUE, print.cutoffs.at=seq(0.1,1,by=0.1), text.adj=c(-0.2,1.7))
+
+# report AUC
+ROCRAUC2 <- performance(ROCRPred2, "auc")
+AUC2 <- ROCRAUC2@y.values[[1]]
+AUC2
+```
+
+## c. How our logistic regression model can be used to identify loans that are expected to be profitable 
+### How much does a $10 investment with an annual interest rate of 6% pay back after 3 years, using continuous compounding of interest?
+$$
+\begin{aligned}
+P&=c*e^{rt} \\
+&=10*e^{0.06*3} \\
+&=11.97
+\end{aligned}
+$$
+
+### ii. What is the profit?
+
+Profit when investment is paid back in full
+$$
+\begin{aligned}
+FullProfit&=c*e^{rt}-c \\
+&=c*(e^{rt}-1)
+\end{aligned}
+$$
+
+Profit when investment is not paid back in full, assume the pay-back is short of \$b dollars, where $0<=b<=c*e^{rt}$
+$$
+\begin{aligned}
+NotFullProfit&=c*e^{rt}-c-b \\
+\end{aligned}
+$$
+
+Notice that if $b=c*e^{rt}$, which means the borrower did not pay back any money, the loss will equal to the investment(c).
+
+### iii. Compute the profit of a $1 investment in each loan
+
+Assume that if the loan is not paid in full, the borrower pay nothing. Therefore, assume the profit will be -c.
+```{r}
+investment = 1
+test$Profit[test$NotFullyPaid==0] <- investment*(exp(1)^(test[test$NotFullyPaid==0,"IntRate"] * 3)-1)
+test$Profit[test$NotFullyPaid==1] <- -investment
+max(test$Profit)
+```
+Maximum profit of a $1 investment is $0.889
+
+### iv. alternative investment strategy
+```{r}
+HighInterest <- test[test$IntRate>=0.15,]
+
+mean(HighInterest$Profit)
+
+# rate of not paid in full
+sum(HighInterest$NotFullyPaid)/nrow(HighInterest)
+```
+* The average profit of a \$1 investment is $0.269 
+* The proportion of the high-interest loans were not paid back in full is 22.7%.
+
+### v.  What is the profit of an investor who invested $1 in each of these 100 lonas? How many of the 100 selected loans were not paid in full? How does this compare to the simple strategy?
+```{r}
+# sort by predicted risk
+HighInterest <- HighInterest[order(HighInterest$PredictedRisk),]
+
+# new data frame with the top100 loans with the least risk
+SelectedLoans <- HighInterest[1:100,]
+mean(SelectedLoans$Profit)
+sum(SelectedLoans$NotFullyPaid==1)
+sum(SelectedLoans$Profit)
+```
+
+* The average profit of an investor who invested \$1 in each of these 100 loans is $0.364 
+* 16 of the 100 loans are not paid back in full
+* The total profit increased from $20.94 to $36.4!
+
+## d. assumptions in financial situations
+
+The situation described in the question is completely possible and need to be careful of. For example, the models are built on historical data; If the behavior and patterns change in the future, the model will lose its effectiveness. In this case, the prediced risk might no longer hold effective. One possible solution is to implement some protective mechanism. For example, cross check the model performance with the reality periodically, and if the evaluation metric fall out of a pre-defined range, analyst will pause and re-examine the model to prevent false prediction.
+

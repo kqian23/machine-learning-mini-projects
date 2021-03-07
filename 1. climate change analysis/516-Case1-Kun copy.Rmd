@@ -1,0 +1,94 @@
+---
+title: "516 Case1 Climate Change"
+author: "Kun Qian"
+date: "1/28/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## a. Build a linear regression model to predict Temp, using all of other vairables as independent variables.
+
+```{r}
+# load data sets
+train <- read.csv("ClimateChangeTrain.csv")
+test <- read.csv("ClimateChangeTest.csv")
+
+# Take a look at the training data
+head(train)
+#head(test)
+
+# build the first linear model to predict Temp
+lm1 <- lm(Temp~.-Year-Month, data=train)
+```
+
+### i. What is the linear regression equation produced by the model?
+```{r}
+summary(lm1)
+```
+The linear regression equation is built with the intercept plus the sum of the product of the variables and their corresponding coefficients.
+
+### ii. Evaluate the quality of the model.
+The R-squared of the model is 0.75. Significant variables are:
+
+* MEI
+
+* CO2
+
+* CFC.11
+
+* CFC.12
+
+* TSI
+
+* Aerosols
+
+### iii. What is the simplest explanation for the contradiction?
+N2O and CFC.11 might be highly correlated with other variables, i.e. there might be multicollinearity. This could cause errors in sign and magnitude of the coefficients.
+
+### iv. Compute the correlations between independent variables in the training set. Which independent variables is N2O highly correlated with? Which independent variable is CFC.11 highly correlated with?
+```{r message=FALSE}
+library(corrplot)
+corrplot(cor(train[,-c(1,2)]), method='number', type="lower", )
+```
+
+* Among all independent variables, N2O is highly correlated with CFC.12.
+
+* Among all independent variables, CFC.11 is highly correlated with CFC.12.
+
+
+&nbsp;
+
+
+## b Build a new linear regression model with only MEI, TSI, Aerosols, and N2O as independent variables.
+```{r}
+# build the linear model
+lm2 <- lm(Temp~MEI+TSI+Aerosols+N2O, data = train)
+```
+
+### i. How does the coefficient for N2O in this model compare to the coefficient in the previous model?
+```{r}
+summary(lm2)
+```
+The coefficient of N2O in this model is now positive and statistically significant. The sign has flipped and the contradiction no longer exists.
+
+### ii. How does the quality of this model compare to the previous one?
+The R-squared is 0.73, slightly dropped compare to the previous model, but still quite good. All variables are significant in this model. Since it has less variables with similar performance, it seems to be a simple and strong model.
+
+
+&nbsp;
+
+
+## c. Using the simplified model I created in part(b), calculate predictions for the testing dataset. What is the R-squared on the test set? What does this tell me about the model?
+```{r}
+# Make prediction on the test set data using the second linear model
+pred <- predict(lm2, test)
+
+# Calculate R-squared
+SSE = sum((test$Temp - pred)^2)
+SST = sum((test$Temp - mean(train$Temp))^2)
+1 - SSE/SST
+```
+The R-squared drops from 0.73 to 0.50. This tells us that the model perform well on the training data, but perform relatively poorly on unseen testing data. 
